@@ -12,6 +12,7 @@ import numpy as np
 import onnxruntime as ort
 from dotenv import load_dotenv
 import logging
+from class_mapper import decode_prediction
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -34,42 +35,70 @@ TEST_DATA_DIR = os.path.join(PROJECT_ROOT, 'test_data')
 def load_training_data():
     """Carga todos los datos CSV de la carpeta test_data."""
     
-    logger.info(f"Cargando datos de prueba desde {TEST_DATA_DIR}/...")
+    logger.info("="*60)
+    logger.info("CARGANDO DATOS DE ENTRENAMIENTO")
+    logger.info("="*60)
+    logger.info(f"Directorio: {TEST_DATA_DIR}")
     
     if not os.path.exists(TEST_DATA_DIR):
-        logger.warning(f"Directorio {TEST_DATA_DIR} no existe")
+        logger.error(f"[✗] Directorio {TEST_DATA_DIR} no existe")
         return None
     
     csv_files = [f for f in os.listdir(TEST_DATA_DIR) if f.endswith('.csv')]
     
     if not csv_files:
-        logger.warning(f"No se encontraron archivos CSV en {TEST_DATA_DIR}")
+        logger.warning(f"[!] No se encontraron archivos CSV en {TEST_DATA_DIR}")
         return None
     
-    logger.info(f"Encontrados {len(csv_files)} archivo(s) CSV")
+    logger.info(f"[✓] Encontrados {len(csv_files)} archivo(s) CSV")
     
     # Combinar todos los archivos CSV
     all_data = []
+    total_rows = 0
     
     for csv_file in csv_files:
         file_path = os.path.join(TEST_DATA_DIR, csv_file)
-        logger.info(f"Cargando: {csv_file}...")
+        logger.info(f"\n  [*] Cargando: {csv_file}")
         
         try:
             df = pd.read_csv(file_path)
             all_data.append(df)
-            logger.info(f"  - Filas: {len(df)}, Columnas: {len(df.columns)}")
+            total_rows += len(df)
+            
+            logger.info(f"      - Filas: {len(df)}")
+            logger.info(f"      - Columnas: {len(df.columns)}")
+            logger.info(f"      - Nombres: {list(df.columns)}")
+            logger.info(f"      - Tipos de datos:")
+            for col, dtype in df.dtypes.items():
+                logger.info(f"        · {col}: {dtype}")
+            logger.info(f"      - Valores nulos por columna:")
+            for col, nulls in df.isnull().sum().items():
+                if nulls > 0:
+                    logger.info(f"        · {col}: {nulls}")
+            
         except Exception as e:
-            logger.error(f"Error cargando {csv_file}: {e}")
+            logger.error(f"      [✗] Error cargando {csv_file}: {e}")
             continue
     
     if not all_data:
-        logger.error("No se pudieron cargar datos de ningún archivo")
+        logger.error("[✗] No se pudieron cargar datos de ningún archivo")
         return None
     
     # Combinar todos los dataframes
     combined_data = pd.concat(all_data, ignore_index=True)
-    logger.info(f"\nDatos combinados: {combined_data.shape[0]} filas, {combined_data.shape[1]} columnas")
+    
+    logger.info("\n" + "="*60)
+    logger.info("RESUMEN DE DATOS COMBINADOS")
+    logger.info("="*60)
+    logger.info(f"[✓] Total de filas: {combined_data.shape[0]}")
+    logger.info(f"[✓] Total de columnas: {combined_data.shape[1]}")
+    logger.info(f"[✓] Nombres de columnas: {list(combined_data.columns)}")
+    logger.info(f"[✓] Forma (shape): {combined_data.shape}")
+    logger.info(f"[✓] Memoria usada: {combined_data.memory_usage(deep=True).sum() / 1024:.2f} KB")
+    
+    # Estadísticas descriptivas
+    logger.info("\n[*] Estadísticas descriptivas:")
+    logger.info(f"\n{combined_data.describe()}")
     
     return combined_data
 
@@ -77,27 +106,52 @@ def load_training_data():
 def extract_features_and_labels(df):
     """Extrae features y labels del dataframe."""
     
+    logger.info("="*60)
+    logger.info("EXTRAYENDO FEATURES Y LABELS")
+    logger.info("="*60)
+    
     # Identificar columnas de features (todas excepto la última que suele ser target)
     feature_cols = [col for col in df.columns if col.lower() not in ['target', 'label', 'species', 'class']]
     label_col = [col for col in df.columns if col.lower() in ['target', 'label', 'species', 'class']]
     
     if not feature_cols:
-        logger.error("No se encontraron columnas de features")
+        logger.error("[✗] No se encontraron columnas de features")
         return None, None
     
-    logger.info(f"Features identificadas: {feature_cols}")
+    logger.info(f"[✓] Features identificadas: {len(feature_cols)}")
+    for i, col in enumerate(feature_cols, 1):
+        logger.info(f"    {i}. {col}")
     
     X = df[feature_cols].values.astype(np.float32)
+    
+    logger.info(f"\n[*] Conversión de features a numpy array:")
+    logger.info(f"    - Shape: {X.shape}")
+    logger.info(f"    - Dtype: {X.dtype}")
+    logger.info(f"    - Rango de valores:")
+    logger.info(f"      · Min: {X.min():.6f}")
+    logger.info(f"      · Max: {X.max():.6f}")
+    logger.info(f"      · Mean: {X.mean():.6f}")
+    logger.info(f"      · Std: {X.std():.6f}")
     
     # Label es opcional
     y = None
     if label_col:
         y = df[label_col[0]].values
-        logger.info(f"Label identificada: {label_col[0]}")
+        logger.info(f"\n[✓] Label identificada: {label_col[0]}")
+        logger.info(f"    - Shape: {y.shape}")
+        logger.info(f"    - Dtype: {y.dtype}")
+        logger.info(f"    - Valores únicos: {np.unique(y)}")
+        
+        # Distribución de clases
+        unique, counts = np.unique(y, return_counts=True)
+        logger.info(f"    - Distribución de clases:")
+        for cls, count in zip(unique, counts):
+            pct = (count / len(y)) * 100
+            logger.info(f"      · Clase '{cls}': {count} muestras ({pct:.2f}%)")
+    else:
+        logger.warning("[!] No se encontró columna de label/target")
     
-    logger.info(f"Features shape: {X.shape}")
-    if y is not None:
-        logger.info(f"Labels shape: {y.shape}")
+    logger.info("\n[✓] Extracción completada exitosamente")
     
     return X, y
 
@@ -178,10 +232,18 @@ def validate_model_with_data(X, y=None):
             for cls in unique_classes:
                 mask = (y == cls)
                 class_preds = predictions[mask]
+                class_preds_decoded = [decode_prediction(p) for p in class_preds]
+                
+                # Contar predicciones correctas e incorrectas
+                correct = sum(1 for p in class_preds_decoded if p == cls)
+                incorrect = len(class_preds_decoded) - correct
+                accuracy = (correct / len(class_preds_decoded)) * 100 if len(class_preds_decoded) > 0 else 0
                 
                 logger.info(f"  Clase '{cls}' ({np.sum(mask)} muestras):")
-                logger.info(f"    - Predicción media: {class_preds.mean():.6f}")
-                logger.info(f"    - Rango: [{class_preds.min():.6f}, {class_preds.max():.6f}]")
+                logger.info(f"    - Predicción numérica media: {class_preds.mean():.6f}")
+                logger.info(f"    - Rango numérico: [{class_preds.min():.6f}, {class_preds.max():.6f}]")
+                logger.info(f"    - Predicciones correctas: {correct}/{len(class_preds_decoded)} ({accuracy:.2f}%)")
+                logger.info(f"    - Distribución de predicciones: {dict(pd.Series(class_preds_decoded).value_counts())}")
         
         logger.info("\n[✓] Validación del modelo completada exitosamente")
         return True

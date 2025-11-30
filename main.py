@@ -7,6 +7,7 @@ import streamlit as st
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 import scripts.download_model as download_model
+from scripts.class_mapper import decode_prediction
 
 # Cargar variables de entorno desde .env
 load_dotenv()
@@ -46,10 +47,6 @@ if "ort_session" not in st.session_state:
     st.session_state.ort_session = None
 
 def log_prediction_to_s3(features, prediction):
-    """
-    Registra la predicción en un archivo de texto en S3.
-    Cumple el requisito: 'cada petición debe agregar una nueva línea'.
-    """
     file_name = f"predicciones_{ENV}.txt"
     local_file = os.path.join(PROJECT_ROOT, file_name)
     
@@ -74,13 +71,11 @@ def log_prediction_to_s3(features, prediction):
         logger.info(f"Log actualizado en S3: {file_name}")
 
     except Exception as e:
-        # No queremos que falle la predicción si falla el log, solo avisar
         logger.error(f"Fallo al guardar el log en S3: {e}")
 
 # --- Eventos de Ciclo de Vida ---
 
 def load_model():
-    """Carga el modelo ONNX en memoria (llamado una sola vez al inicio)."""
     if st.session_state.ort_session is not None:
         return st.session_state.ort_session
     
@@ -149,19 +144,16 @@ if st.button("🚀 Hacer Predicción", use_container_width=True):
         # Inferencia
         result = ort_session.run(None, {input_name: input_data})
         
-        # Manejar diferentes formatos de resultado
         if isinstance(result[0], np.ndarray):
-            # Si es un array, tomar el primer elemento
-            prediction_result = float(result[0].flatten()[0])
+            prediction_numeric = float(result[0].flatten()[0])
         else:
-            # Si es una lista o similar
-            prediction_result = float(result[0][0]) if isinstance(result[0], (list, tuple)) else float(result[0])
+            prediction_numeric = float(result[0][0]) if isinstance(result[0], (list, tuple)) else float(result[0])
         
-        # Mostrar resultado
+        prediction_result = decode_prediction(prediction_numeric)
         st.success("✅ Predicción realizada exitosamente")
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Predicción", f"{prediction_result:.6f}")
+            st.metric("Predicción", prediction_result)
         with col2:
             st.metric("Entorno", ENV)
         
@@ -178,11 +170,9 @@ if st.button("🚀 Hacer Predicción", use_container_width=True):
 st.sidebar.header("ℹ️ Información")
 st.sidebar.markdown("""
 ### Configuración
-- **AWS Region:** `{}`
-- **Bucket S3:** `{}`
-- **Archivo de modelo:** `{}`
+- **Modelo:** `{}`
 - **Entorno:** `{}`
-""".format(AWS_REGION, BUCKET, MODEL_FILENAME, ENV))
+""".format(MODEL_FILENAME, ENV))
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("""
