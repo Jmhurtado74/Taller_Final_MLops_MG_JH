@@ -5,9 +5,7 @@ name: Python application
 
 on:
   push:
-    branches: [ "dev" ]
-  pull_request:
-    branches: [ "prod" ]
+    branches: [ "dev", "prod" ]
 
 env:
   AWS_ACCESS_KEY_ID: ${{ secrets.ACCESS_KEY_ID }}
