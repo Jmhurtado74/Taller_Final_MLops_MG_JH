@@ -18,6 +18,10 @@ def download_model():
     AWS_SECRET_KEY = os.getenv('AWS_SECRET_KEY')
     AWS_BUCKET = os.getenv('AWS_BUCKET')
     MODEL_FILE = os.getenv('MODEL_FILE')
+
+    print("[*] Iniciando descarga del modelo ONNX desde S3...")
+    print(f"    - Bucket: {AWS_BUCKET}")
+    print(f"    - Archivo: {MODEL_FILE}")
     
     if not all([AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_BUCKET, MODEL_FILE]):
         print("ERROR: Variables de entorno no están configuradas correctamente")
