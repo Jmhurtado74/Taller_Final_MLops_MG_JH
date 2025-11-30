@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  iris-model-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+        AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+        AWS_BUCKET: ${AWS_BUCKET}
+        MODEL_FILE: ${MODEL_FILE}
+        ENV: dev
+    ports:
+      - "8501:8501"
+    environment:
+      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+      - AWS_SECRET_KEY=${AWS_SECRET_KEY}
+      - AWS_BUCKET=${AWS_BUCKET}
+      - MODEL_FILE=${MODEL_FILE}
+      - ENV=dev
+    container_name: iris-model-dev
+    restart: unless-stopped
+    volumes:
+      - ./app:/app
+      - ./logs:/logs
+    networks:
+      - iris-network
+
+  iris-model-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+        AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+        AWS_BUCKET: ${AWS_BUCKET}
+        MODEL_FILE: ${MODEL_FILE}
+        ENV: prod
+    ports:
+      - "8502:8501"
+    environment:
+      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+      - AWS_SECRET_KEY=${AWS_SECRET_KEY}
+      - AWS_BUCKET=${AWS_BUCKET}
+      - MODEL_FILE=${MODEL_FILE}
+      - ENV=prod
+    container_name: iris-model-prod
+    restart: unless-stopped
+    volumes:
+      - ./app:/app
+      - ./logs:/logs
+    networks:
+      - iris-network
+
+networks:
+  iris-network:
+    driver: bridge

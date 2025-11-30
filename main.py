@@ -4,11 +4,9 @@ import boto3
 import onnxruntime as ort
 import numpy as np
 import streamlit as st
-from botocore.exceptions import NoCredentialsError, ClientError
-from typing import List
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
-import tempfile
-import model_loader
+import scripts.download_model as download_model
 
 # Cargar variables de entorno desde .env
 load_dotenv()
@@ -32,7 +30,7 @@ MODEL_FILE_PATH = os.getenv("MODEL_FILE", "model.onnx")
 MODEL_FILENAME = os.path.basename(MODEL_FILE_PATH)
 
 # Ruta completa del modelo en la carpeta raíz del proyecto
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 MODEL_FULL_PATH = os.path.join(PROJECT_ROOT, MODEL_FILENAME)
 
 # Cliente S3
@@ -46,18 +44,6 @@ s3_client = boto3.client(
 # Variable global para cargar el modelo en memoria (usando session_state de Streamlit)
 if "ort_session" not in st.session_state:
     st.session_state.ort_session = None
-
-# --- Funciones Auxiliares ---
-
-def download_model_from_s3():
-    """Descarga el modelo ONNX desde S3 al inicio."""
-    try:
-        logger.info(f"Intentando descargar {MODEL_FILENAME} del bucket {BUCKET}...")
-        model_loader.download_model()
-        logger.info("Modelo descargado exitosamente.")
-    except Exception as e:
-        logger.error(f"Error descargando el modelo: {e}")
-        raise RuntimeError("No se pudo cargar el modelo desde S3")
 
 def log_prediction_to_s3(features, prediction):
     """
@@ -102,9 +88,14 @@ def load_model():
         # 1. Descargar el modelo si no existe
         if not os.path.exists(MODEL_FULL_PATH):
             logger.info(f"Intentando descargar {MODEL_FILENAME} del bucket {BUCKET}...")
-            download_model_from_s3()
+            download_model.download_model()
         
         # 2. Cargar el modelo en ONNX Runtime
+        if not os.path.exists(MODEL_FULL_PATH):
+            logger.error(f"El archivo del modelo no existe en la ruta: {MODEL_FULL_PATH}")
+            st.error("El archivo del modelo no se encontró. Verifica la descarga.")
+            return None
+        
         ort_session = ort.InferenceSession(MODEL_FULL_PATH)
         st.session_state.ort_session = ort_session
         logger.info("Sesión de ONNX Runtime iniciada correctamente.")
