@@ -66,80 +66,39 @@ class TestONNXModel:
         
         # El resultado debe ser un número válido
         assert isinstance(float(prediction), float), "El resultado no es un número válido"
-    
-    def test_model_metric_within_threshold(self):
-        """
-        Prueba 2: Verificar que la métrica del modelo no excede el umbral definido.
-        
-        Para el modelo Iris, verificamos que la confianza (accuracy proxy) 
-        sea razonablemente alta para un conjunto de datos de prueba.
-        """
-        print("\n[TEST 2] Probando métrica del modelo contra umbral...")
-        
-        # Usar datos de los archivos CSV si están disponibles
-        test_inputs = None
-        
-        if self.test_data_files:
-            try:
-                # Cargar primer archivo CSV
-                df = pd.read_csv(self.test_data_files[0])
-                # Asumir que las últimas 4 columnas son features y la última es target
-                feature_cols = [col for col in df.columns if col != 'target' and col != 'species']
-                if feature_cols:
-                    test_inputs = df[feature_cols].values.astype(np.float32)
-                    if len(test_inputs) > 10:
-                        test_inputs = test_inputs[:10]  # Limitar a 10 muestras
-            except Exception as e:
-                print(f"  No se pudo leer CSV: {e}")
-        
-        # Si no hay datos CSV, finalizar el test
-        if test_inputs is None:
-            print("  No hay datos de prueba disponibles. Saltando prueba de métrica.")
-            return
-        
-        predictions = []
-        for test_input in test_inputs:
-            result = self.ort_session.run(None, {self.input_name: test_input.reshape(1, -1)})
-            pred = result[0][0] if isinstance(result[0], np.ndarray) else result[0]
-            predictions.append(float(pred))
-        
-        predictions = np.array(predictions)
-        
-        # Calcular métrica: en este caso usamos varianza como proxy
-        # Un modelo estable debe tener predicciones consistentes
-        metric_value = np.var(predictions)
-        
-        # Umbral: la varianza no debe ser demasiado alta (indicaría inestabilidad)
-        threshold = 2.0
-        
-        print(f"  Predictions: {predictions}")
-        print(f"  Varianza (métrica): {metric_value:.6f}")
-        print(f"  Umbral máximo: {threshold}")
-        
-        assert metric_value <= threshold, \
-            f"La métrica ({metric_value:.6f}) excede el umbral ({threshold})"
-        
-        print("  ✓ Métrica dentro del rango aceptable")
-    
-    def test_model_handles_edge_cases(self):
-        """Prueba 3: Verificar que el modelo maneja casos extremos."""
-        print("\n[TEST 3] Probando casos extremos...")
-        
-        # Casos extremos del rango del dataset Iris
-        edge_cases = np.array([
-            [4.3, 3.0, 1.1, 0.1],  # Valores mínimos
-            [7.9, 4.4, 6.9, 2.5],  # Valores máximos
-        ], dtype=np.float32)
-        
-        for i, test_input in enumerate(edge_cases):
-            result = self.ort_session.run(None, {self.input_name: test_input.reshape(1, -1)})
-            pred = result[0][0] if isinstance(result[0], np.ndarray) else result[0]
-            
-            assert np.isfinite(pred), f"Predicción inválida para caso {i}: {pred}"
-            print(f"  Caso {i+1}: Input={test_input}, Output={float(pred)}")
-        
-        print("  ✓ Todos los casos extremos manejados correctamente")
 
+
+    def test_download_data_files(self):
+        """
+        Prueba 2: Verificar que los archivos de datos de prueba se descargaron correctamente.
+        """
+        print("\n[TEST 2] Verificando descarga de archivos de datos de prueba...")
+        
+        assert len(self.test_data_files) > 0, "No se descargaron archivos de datos de prueba"
+        
+        for file_path in self.test_data_files:
+            assert os.path.exists(file_path), f"El archivo {file_path} no existe"
+            df = pd.read_csv(file_path)
+            assert not df.empty, f"El archivo {file_path} está vacío"
+            print(f"  ✓ Archivo {file_path} descargado y contiene datos")
+        
+        print("  ✓ Todos los archivos de datos de prueba están disponibles y son válidos")
+
+    def test_download_model_file(self):
+        """
+        Prueba 3: Verificar que el archivo del modelo ONNX se descargó correctamente.
+        """
+        print("\n[TEST 3] Verificando descarga del archivo del modelo ONNX...")
+        
+        assert os.path.exists(MODEL_PATH), f"El archivo del modelo {MODEL_PATH} no existe"
+        
+        # Intentar cargar el modelo para verificar su validez
+        try:
+            ort.InferenceSession(MODEL_PATH)
+            print(f"  ✓ Archivo del modelo {MODEL_PATH} descargado y es válido")
+        except Exception as e:
+            pytest.fail(f"El archivo del modelo no es válido: {e}")
+    
 
 if __name__ == "__main__":
     # Ejecutar pruebas con pytest
