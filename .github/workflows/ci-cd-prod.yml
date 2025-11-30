@@ -108,16 +108,14 @@ jobs:
           echo "Port: $PORT"
           echo "ECR Image: $ECR_IMAGE"
           
-          # Descargar la clave SSH desde S3
-          echo "Downloading SSH key from S3..."
-          aws s3 cp s3://${{ secrets.AWS_BUCKET }}/${{ secrets.SSH_KEY_S3_PATH }} ./ec2-key.ppk
-          chmod 600 ./ec2-key.ppk
+          # Instalar sshpass para autenticación por contraseña
+          apt-get update && apt-get install -y sshpass
           
-          # Instancia SSH en EC2
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ./ec2-key.ppk ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+          # Conectar a EC2 con usuario y contraseña
+          sshpass -p "${{ secrets.EC2_PASSWORD }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             # Variables
             ENV=prod
-            PORT=8080
+            PORT=8081
             ECR_IMAGE=${{ steps.login-ecr.outputs.registry }}/mlops/iris_app:prod-latest
             REGISTRY=${{ steps.login-ecr.outputs.registry }}
             REGION=${{ secrets.AWS_REGION }}
@@ -135,11 +133,11 @@ jobs:
             # Descargar la nueva imagen
             docker pull $ECR_IMAGE
             
-            # Ejecutar contenedor en puerto 8080
+            # Ejecutar contenedor en puerto 8081
             docker run -d \
               --name $CONTAINER_NAME \
               --restart unless-stopped \
-              -p 8080:8501 \
+              -p 8081:8501 \
               -e AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }} \
               -e AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }} \
               -e AWS_BUCKET=${{ secrets.AWS_BUCKET }} \
@@ -148,11 +146,8 @@ jobs:
               -e AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }} \
               $ECR_IMAGE
             
-            echo "prod container deployed successfully on port 8080"
+            echo "PROD container deployed successfully on port 8081"
           EOF
-          
-          # Limpiar clave local
-          rm -f ./ec2-key.ppk
       
       - name: Deployment Complete
         run: echo "✓ prod deployment completed successfully"
