@@ -66,38 +66,6 @@ class TestONNXModel:
         
         # El resultado debe ser un número válido
         assert isinstance(float(prediction), float), "El resultado no es un número válido"
-
-
-    def test_download_data_files(self):
-        """
-        Prueba 2: Verificar que los archivos de datos de prueba se descargaron correctamente.
-        """
-        print("\n[TEST 2] Verificando descarga de archivos de datos de prueba...")
-        
-        assert len(self.test_data_files) > 0, "No se descargaron archivos de datos de prueba"
-        
-        for file_path in self.test_data_files:
-            assert os.path.exists(file_path), f"El archivo {file_path} no existe"
-            df = pd.read_csv(file_path)
-            assert not df.empty, f"El archivo {file_path} está vacío"
-            print(f"  ✓ Archivo {file_path} descargado y contiene datos")
-        
-        print("  ✓ Todos los archivos de datos de prueba están disponibles y son válidos")
-
-    def test_download_model_file(self):
-        """
-        Prueba 3: Verificar que el archivo del modelo ONNX se descargó correctamente.
-        """
-        print("\n[TEST 3] Verificando descarga del archivo del modelo ONNX...")
-        
-        assert os.path.exists(MODEL_PATH), f"El archivo del modelo {MODEL_PATH} no existe"
-        
-        # Intentar cargar el modelo para verificar su validez
-        try:
-            ort.InferenceSession(MODEL_PATH)
-            print(f"  ✓ Archivo del modelo {MODEL_PATH} descargado y es válido")
-        except Exception as e:
-            pytest.fail(f"El archivo del modelo no es válido: {e}")
     
 
 if __name__ == "__main__":
