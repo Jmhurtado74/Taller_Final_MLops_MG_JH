@@ -32,17 +32,14 @@ jobs:
           AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
           AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
           AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
-          MODEL_FILE: ${{ secrets.MODEL_FILE_PROD }}
+          MODEL_FILE: ${{ secrets.MODEL_FILE }}
           ENV: prod
         run: |
           python scripts/setup.py
       
       - name: Pre-training - Validate Model with Training Data
         env:
-          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
-          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
-          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
-          MODEL_FILE: ${{ secrets.MODEL_FILE_PROD }}
+          MODEL_FILE: ${{ secrets.MODEL_FILE }}
           ENV: prod
         run: |
           python scripts/pretrain.py
@@ -52,17 +49,17 @@ jobs:
           AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
           AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
           AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
-          MODEL_FILE: ${{ secrets.MODEL_FILE_PROD }}
+          MODEL_FILE: ${{ secrets.MODEL_FILE }}
           ENV: prod
         run: |
           python -m pytest test/test_model.py -v --tb=short
       
       - name: Test Results
         if: always()
-        run: echo "✓ All tests passed for PROD environment"
+        run: echo "✓ All tests passed for prod environment"
 
   build:
-    name: Build & Deploy Stage - PROD
+    name: Build & Deploy Stage - prod
     runs-on: ubuntu-latest
     needs: test
     if: success()
@@ -97,16 +94,16 @@ jobs:
             AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}
             AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}
             AWS_BUCKET=${{ secrets.AWS_BUCKET }}
-            MODEL_FILE=${{ secrets.MODEL_FILE_PROD }}
+            MODEL_FILE=${{ secrets.MODEL_FILE }}
             ENV=prod
       
-      - name: Deploy to EC2 - PROD (Port 8081)
+      - name: Deploy to EC2 - prod (Port 8080)
         run: |
           ECR_IMAGE=${{ steps.login-ecr.outputs.registry }}/iris-model:prod-latest
           ENV=prod
-          PORT=8081
+          PORT=8080
           
-          echo "Deploying PROD to EC2 instance..."
+          echo "Deploying prod to EC2 instance..."
           echo "Environment: $ENV"
           echo "Port: $PORT"
           echo "ECR Image: $ECR_IMAGE"
@@ -120,7 +117,7 @@ jobs:
           ssh -i ./ec2-key.ppk ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
             # Variables
             ENV=prod
-            PORT=8081
+            PORT=8080
             ECR_IMAGE=${{ steps.login-ecr.outputs.registry }}/iris-model:prod-latest
             REGISTRY=${{ steps.login-ecr.outputs.registry }}
             REGION=${{ secrets.AWS_REGION }}
@@ -138,24 +135,24 @@ jobs:
             # Descargar la nueva imagen
             docker pull $ECR_IMAGE
             
-            # Ejecutar contenedor en puerto 8081
+            # Ejecutar contenedor en puerto 8080
             docker run -d \
               --name $CONTAINER_NAME \
               --restart unless-stopped \
-              -p 8081:8501 \
+              -p 8080:8501 \
               -e AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }} \
               -e AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }} \
               -e AWS_BUCKET=${{ secrets.AWS_BUCKET }} \
-              -e MODEL_FILE=${{ secrets.MODEL_FILE_PROD }} \
+              -e MODEL_FILE=${{ secrets.MODEL_FILE }} \
               -e ENV=prod \
               -e AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }} \
               $ECR_IMAGE
             
-            echo "PROD container deployed successfully on port 8081"
+            echo "prod container deployed successfully on port 8080"
           EOF
           
           # Limpiar clave local
           rm -f ./ec2-key.ppk
       
       - name: Deployment Complete
-        run: echo "✓ PROD deployment completed successfully"
+        run: echo "✓ prod deployment completed successfully"
