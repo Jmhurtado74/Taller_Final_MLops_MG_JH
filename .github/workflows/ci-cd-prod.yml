@@ -74,20 +74,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
       
-      - name: Build and push Docker image
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build and push Docker image to ECR
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/iris-model:prod-latest
-            ${{ secrets.DOCKER_USERNAME }}/iris-model:prod-${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/iris-model:prod-latest
+            ${{ steps.login-ecr.outputs.registry }}/iris-model:prod-${{ github.sha }}
           build-args: |
             AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}
             AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}
@@ -95,18 +100,62 @@ jobs:
             MODEL_FILE=${{ secrets.MODEL_FILE_PROD }}
             ENV=prod
       
-      - name: Deploy to Cloud Run - PROD
+      - name: Deploy to EC2 - PROD (Port 8081)
         run: |
-          echo "Deploying to Cloud Run PROD endpoint..."
-          echo "Image: ${{ secrets.DOCKER_USERNAME }}/iris-model:prod-latest"
-          # Aquí va el comando de despliegue a Google Cloud Run o tu servicio de nube
-          # gcloud run deploy iris-model-prod --image=${{ secrets.DOCKER_USERNAME }}/iris-model:prod-latest
-      
-      - name: Deploy to AWS App Runner - PROD
-        run: |
-          echo "Deploying to AWS App Runner PROD endpoint..."
-          # Aquí va el comando de despliegue a AWS App Runner
-          # aws apprunner start-deployment --service-arn arn:aws:apprunner:region:account:service/iris-model-prod
+          ECR_IMAGE=${{ steps.login-ecr.outputs.registry }}/iris-model:prod-latest
+          ENV=prod
+          PORT=8081
+          
+          echo "Deploying PROD to EC2 instance..."
+          echo "Environment: $ENV"
+          echo "Port: $PORT"
+          echo "ECR Image: $ECR_IMAGE"
+          
+          # Descargar la clave SSH desde S3
+          echo "Downloading SSH key from S3..."
+          aws s3 cp s3://${{ secrets.AWS_BUCKET }}/${{ secrets.SSH_KEY_S3_PATH }} ./ec2-key.ppk
+          chmod 600 ./ec2-key.ppk
+          
+          # Instancia SSH en EC2
+          ssh -i ./ec2-key.ppk ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+            # Variables
+            ENV=prod
+            PORT=8081
+            ECR_IMAGE=${{ steps.login-ecr.outputs.registry }}/iris-model:prod-latest
+            REGISTRY=${{ steps.login-ecr.outputs.registry }}
+            REGION=${{ secrets.AWS_REGION }}
+            
+            # Descargar las credenciales de ECR
+            aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $REGISTRY
+            
+            # Nombre del contenedor
+            CONTAINER_NAME="iris-model-prod"
+            
+            # Detener contenedor anterior si existe
+            docker stop $CONTAINER_NAME || true
+            docker rm $CONTAINER_NAME || true
+            
+            # Descargar la nueva imagen
+            docker pull $ECR_IMAGE
+            
+            # Ejecutar contenedor en puerto 8081
+            docker run -d \
+              --name $CONTAINER_NAME \
+              --restart unless-stopped \
+              -p 8081:8501 \
+              -e AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }} \
+              -e AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }} \
+              -e AWS_BUCKET=${{ secrets.AWS_BUCKET }} \
+              -e MODEL_FILE=${{ secrets.MODEL_FILE_PROD }} \
+              -e ENV=prod \
+              -e AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }} \
+              $ECR_IMAGE
+            
+            echo "PROD container deployed successfully on port 8081"
+          EOF
+          
+          # Limpiar clave local
+          rm -f ./ec2-key.ppk
       
       - name: Deployment Complete
         run: echo "✓ PROD deployment completed successfully"

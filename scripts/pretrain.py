@@ -1,10 +1,3 @@
-#!/usr/bin/env python
-"""
-Script de Pre-entrenamiento (Pre-training Validation)
-Carga los datos de prueba CSV y valida/entrena el modelo ONNX.
-Este script se ejecuta antes de las pruebas unitarias en el pipeline CI/CD.
-"""
-
 import os
 import sys
 import pandas as pd
@@ -33,8 +26,6 @@ TEST_DATA_DIR = os.path.join(PROJECT_ROOT, 'test_data')
 
 
 def load_training_data():
-    """Carga todos los datos CSV de la carpeta test_data."""
-    
     logger.info("="*60)
     logger.info("CARGANDO DATOS DE ENTRENAMIENTO")
     logger.info("="*60)
@@ -104,8 +95,6 @@ def load_training_data():
 
 
 def extract_features_and_labels(df):
-    """Extrae features y labels del dataframe."""
-    
     logger.info("="*60)
     logger.info("EXTRAYENDO FEATURES Y LABELS")
     logger.info("="*60)
@@ -157,8 +146,6 @@ def extract_features_and_labels(df):
 
 
 def validate_model_with_data(X, y=None):
-    """Valida el modelo ONNX con los datos de entrenamiento."""
-    
     logger.info("\n" + "="*60)
     logger.info("VALIDACIÓN DEL MODELO CON DATOS DE ENTRENAMIENTO")
     logger.info("="*60)
@@ -256,8 +243,6 @@ def validate_model_with_data(X, y=None):
 
 
 def calculate_model_metrics(X, y=None):
-    """Calcula métricas del modelo para monitoreo."""
-    
     logger.info("\n" + "="*60)
     logger.info("CÁLCULO DE MÉTRICAS DEL MODELO")
     logger.info("="*60)
@@ -301,8 +286,6 @@ def calculate_model_metrics(X, y=None):
 
 
 def pretrain_workflow():
-    """Ejecuta el workflow completo de pre-entrenamiento."""
-    
     logger.info("="*60)
     logger.info("INICIO DE PRE-ENTRENAMIENTO")
     logger.info(f"Entorno: {ENV}")
