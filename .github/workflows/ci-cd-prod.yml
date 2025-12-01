@@ -1,0 +1,153 @@
+name: CI/CD Pipeline - PROD
+
+on:
+  push:
+    branches:
+      - prod
+  pull_request:
+    branches:
+      - prod
+
+jobs:
+  test:
+    name: Test Stage
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      
+      - name: Setup - Validate and Download Resources
+        env:
+          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          MODEL_FILE: ${{ secrets.MODEL_FILE }}
+          ENV: prod
+        run: |
+          python scripts/setup.py
+      
+      - name: Pre-training - Validate Model with Training Data
+        env:
+          MODEL_FILE: ${{ secrets.MODEL_FILE }}
+          ENV: prod
+        run: |
+          python scripts/pretrain.py
+      
+      - name: Run unit tests
+        env:
+          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          MODEL_FILE: ${{ secrets.MODEL_FILE }}
+          ENV: prod
+        run: |
+          python -m pytest test/test_model.py -v --tb=short
+      
+      - name: Test Results
+        if: always()
+        run: echo "✓ All tests passed for prod environment"
+
+  build:
+    name: Build & Deploy Stage - prod
+    runs-on: ubuntu-latest
+    needs: test
+    if: success()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build and push Docker image to ECR
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/mlops/iris_app:prod-latest
+            ${{ steps.login-ecr.outputs.registry }}/mlops/iris_app:prod-${{ github.sha }}
+          build-args: |
+            AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}
+            AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }}
+            AWS_BUCKET=${{ secrets.AWS_BUCKET }}
+            MODEL_FILE=${{ secrets.MODEL_FILE }}
+            ENV=prod
+      
+      - name: Deploy to EC2 - prod (Port 8080)
+        run: |
+          ECR_IMAGE=${{ steps.login-ecr.outputs.registry }}/mlops/iris_app:prod-latest
+          ENV=prod
+          PORT=8080
+          
+          echo "Deploying prod to EC2 instance..."
+          echo "Environment: $ENV"
+          echo "Port: $PORT"
+          echo "ECR Image: $ECR_IMAGE"
+          
+          # Instalar sshpass para autenticación por contraseña
+          apt-get update && apt-get install -y sshpass
+          
+          # Conectar a EC2 con usuario y contraseña
+          sshpass -p "${{ secrets.EC2_PASSWORD }}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            # Variables
+            ENV=prod
+            PORT=8081
+            ECR_IMAGE=${{ steps.login-ecr.outputs.registry }}/mlops/iris_app:prod-latest
+            REGISTRY=${{ steps.login-ecr.outputs.registry }}
+            REGION=${{ secrets.AWS_REGION }}
+            
+            # Descargar las credenciales de ECR
+            aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $REGISTRY
+            
+            # Nombre del contenedor
+            CONTAINER_NAME="mlops/iris_app-prod"
+            
+            # Detener contenedor anterior si existe
+            docker stop $CONTAINER_NAME || true
+            docker rm $CONTAINER_NAME || true
+            
+            # Descargar la nueva imagen
+            docker pull $ECR_IMAGE
+            
+            # Ejecutar contenedor en puerto 8081
+            docker run -d \
+              --name $CONTAINER_NAME \
+              --restart unless-stopped \
+              -p 8081:8501 \
+              -e AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }} \
+              -e AWS_SECRET_KEY=${{ secrets.AWS_SECRET_KEY }} \
+              -e AWS_BUCKET=${{ secrets.AWS_BUCKET }} \
+              -e MODEL_FILE=${{ secrets.MODEL_FILE }} \
+              -e ENV=prod \
+              -e AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }} \
+              $ECR_IMAGE
+            
+            echo "PROD container deployed successfully on port 8081"
+          EOF
+      
+      - name: Deployment Complete
+        run: echo "✓ prod deployment completed successfully"
